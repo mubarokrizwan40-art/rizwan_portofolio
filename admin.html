@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Portofolio</title>
+<style>
+:root{--bg:#060b14;--cy:#22d3ee;--ln:rgba(34,211,238,.35);--tx:#f1f5f9;--mut:#94a3b8;color-scheme:dark}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0 auto;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,sans-serif;padding:16px;max-width:900px}
+button,input,select,textarea{font:inherit;color:var(--tx);background:rgba(255,255,255,.06);border:1px solid var(--ln);border-radius:8px;padding:8px 12px}
+button{cursor:pointer;color:var(--cy)}button:hover,button.on{background:rgba(34,211,238,.2)}
+input,textarea{width:100%}label{display:grid;gap:4px;font-size:13px;color:var(--mut);margin-bottom:10px}
+.card{border:1px solid var(--ln);border-radius:12px;padding:14px;margin:10px 0;background:rgba(255,255,255,.04)}
+.r{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.m{color:var(--mut);font-size:13px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}
+.st{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--ln)}
+.disetujui{color:#4ade80}.ditolak{color:#f87171}.menunggu{color:#fbbf24}
+header{display:flex;justify-content:space-between;align-items:center}
+</style>
+</head>
+<body>
+<div id="login" class="card"><h2>Masuk Admin</h2>
+<form id="lf"><label>Email<input type="email" id="em" required></label><label>Password<input type="password" id="pw" required></label><button>Masuk</button><p id="err" class="m"></p></form></div>
+<div id="app" hidden><header><h2>Admin Portofolio</h2><button id="out">Keluar</button></header><nav id="tabs"></nav><div id="main"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="defaults.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+window.onerror=m=>{const d=$("err");if(d)d.textContent="Error: "+m};
+const esc=s=>String(s??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const fail=m=>{document.body.innerHTML='<div class="card"><h3>Admin belum bisa dijalankan</h3><p>'+m+'</p></div>';throw new Error(m)};
+if(!window.supabase)fail("Library Supabase gagal dimuat dari internet. Cek koneksi atau pemblokir iklan, lalu muat ulang halaman.");
+if(!window.SB||!SB.url||!SB.key||SB.url.includes("GANTI")||SB.key.includes("GANTI"))fail("Isi dulu config.js dengan Project URL dan kunci publik Supabase, lalu simpan filenya.");
+if(!/^https:\/\/.+/.test(SB.url))fail("Project URL harus diawali https:// , contoh https://xxxx.supabase.co");
+let DB;try{DB=supabase.createClient(SB.url,SB.key)}catch(e){fail("Gagal membuat koneksi: "+e.message)}
+const ICONS="mic, users, present, camera, shield, clip, cal, file, award, code";
+const T={
+ bookings:{label:"Booking"},
+ profile:{label:"Profil",single:true,f:[["name","Nama"],["bio","Tentang saya","t"],["whatsapp","WhatsApp (format 628xxx)"],["photo_url","Foto profil","file"],["cv_url","File CV (PDF)","file"]]},
+ services:{label:"Layanan",ord:"sort_order",f:[["title","Nama layanan"],["description","Deskripsi","t"],["icon","Ikon: "+ICONS],["sort_order","Urutan","n"]]},
+ projects:{label:"Proyek",ord:"sort_order",f:[["title","Nama proyek"],["description","Deskripsi","t"],["tags","Teknologi","a"],["link","Link demo"],["icon","Ikon: "+ICONS],["sort_order","Urutan","n"]]},
+ stage_records:{label:"Panggung",ord:"sort_order",f:[["role","Peran (MC, Host, Moderator, Pemateri)"],["title","Nama acara"],["sort_order","Urutan","n"]]},
+ achievements:{label:"Prestasi",ord:"sort_order",f:[["title","Prestasi"],["is_top","Tampilkan menonjol","b"],["sort_order","Urutan","n"]]},
+ organizations:{label:"Organisasi",ord:"sort_order",f:[["period","Periode"],["role","Jabatan"],["organization","Organisasi"],["sort_order","Urutan","n"]]},
+ activities:{label:"Kegiatan",ord:"sort_order",f:[["title","Kegiatan"],["sort_order","Urutan","n"]]},
+ education:{label:"Pendidikan",ord:"sort_order",f:[["title","Sekolah atau kampus"],["description","Keterangan","t"],["sort_order","Urutan","n"]]},
+ experiences:{label:"Pekerjaan",ord:"sort_order",f:[["position","Posisi"],["organization","Instansi"],["period","Periode"],["description","Deskripsi","t"],["sort_order","Urutan","n"]]},
+ evidence:{label:"Galeri dan bukti",ord:"id",f:[["title","Judul"],["category","Kategori: sertifikat, dokumentasi, modeling, pembicara"],["caption","Keterangan"],["file_url","Foto atau file","file"],["event_date","Tanggal (YYYY-MM-DD)"]]},
+ writings:{label:"Karya tulis",ord:"id",f:[["title","Judul"],["summary","Ringkasan","t"],["file_url","File atau link","file"],["year","Tahun","n"]]},
+ testimonials:{label:"Testimoni",ord:"id",f:[["quote","Isi testimoni","t"],["author","Nama"]]},
+ import:{label:"Impor data CV"}
+};
+let cur="bookings",edit=null;
+
+const fld=(f,v)=>{const [k,l,t]=f;v=v??"";
+ if(t==="t")return `<label>${l}<textarea name="${k}" rows="3">${esc(v)}</textarea></label>`;
+ if(t==="b")return `<label><span><input type="checkbox" name="${k}" ${v?"checked":""} style="width:auto"> ${l}</span></label>`;
+ if(t==="a")return `<label>${l} (pisahkan dengan koma)<input name="${k}" value="${esc((v||[]).join(", "))}"></label>`;
+ if(t==="file")return `<label>${l}<input name="${k}" value="${esc(v)}"><input type="file" data-up="${k}"></label>`;
+ return `<label>${l}<input name="${k}" ${t==="n"?'type="number"':""} value="${esc(v)}"></label>`};
+
+async function show(){
+ $("tabs").innerHTML=Object.keys(T).map(k=>`<button data-k="${k}" class="${k===cur?"on":""}">${T[k].label}</button>`).join("");
+ if(cur==="bookings")return showBookings();
+ if(cur==="import")return $("main").innerHTML=`<div class="card"><p>Tombol ini mengisi database dengan data bawaan dari CV (layanan, proyek, panggung, prestasi, organisasi, kegiatan, pendidikan, pekerjaan). Isi lama pada tabel-tabel itu akan <b>diganti</b>. Jalankan sekali di awal saja.</p><button data-a="imp">Impor data CV sekarang</button></div>`;
+ const t=T[cur];
+ const {data}=await DB.from(cur).select("*").order(t.single?"id":t.ord,{ascending:true});
+ const rows=data||[];
+ const row=t.single?(rows[0]||{}):(edit!==null?(rows.find(r=>r.id===edit)||{}):{});
+ $("main").innerHTML=(t.single?"":`<h3>${edit!==null?"Ubah":"Tambah"} ${t.label}</h3>`)
+  +`<form class="card">${t.f.map(f=>fld(f,row[f[0]])).join("")}<div class="r"><button>Simpan</button>${edit!==null&&!t.single?'<button type="button" data-a="cancel">Batal</button>':""}</div></form>`
+  +(t.single?"":rows.map(r=>`<div class="card"><b>${esc(r[t.f[0][0]])}</b><div class="m">${esc(String(r[t.f[1][0]]??"").slice(0,90))}</div><div class="r"><button data-a="edit" data-id="${r.id}">Ubah</button><button data-a="del" data-id="${r.id}">Hapus</button></div></div>`).join(""));
+}
+async function showBookings(){
+ const {data}=await DB.from("bookings").select("*").order("created_at",{ascending:false});
+ $("main").innerHTML=(data||[]).map(b=>`<div class="card"><b>${esc(b.client_name)}</b> <span class="st ${b.status}">${b.status}</span><div>${esc(b.service)} | ${b.event_date} | ${esc(b.location||"")}</div><div class="m">Kontak: ${esc(b.contact)}${b.notes?" | "+esc(b.notes):""}</div><div class="r"><button data-a="ok" data-id="${b.id}">Setujui</button><button data-a="no" data-id="${b.id}">Tolak</button><button data-a="del" data-id="${b.id}">Hapus</button></div></div>`).join("")||"<p>Belum ada booking.</p>";
+}
+async function imp(){
+ if(!confirm("Isi lama tabel konten akan diganti dengan data CV. Lanjut?"))return;
+ const D=DEFAULTS;
+ const rows={
+  services:D.layanan.map((s,i)=>({icon:s[0],title:s[1],description:s[2],sort_order:i})),
+  experiences:D.pengalaman.map((x,i)=>({position:x[0],description:x[1],sort_order:i})),
+  education:D.pendidikan.map((x,i)=>({title:x[0],description:x[1],sort_order:i})),
+  projects:D.proyek.map((x,i)=>({icon:x[0],title:x[1],description:x[2],tags:x[3],link:x[4]||null,sort_order:i})),
+  achievements:D.prestasi.map((x,i)=>({title:x[0],is_top:!!x[1],sort_order:i})),
+  organizations:D.organisasi.map((x,i)=>({period:x[0],role:x[1],organization:x[2],sort_order:i})),
+  activities:D.kegiatan.map((x,i)=>({title:x,sort_order:i})),
+  stage_records:Object.entries(D.panggung).flatMap(([r,a],i)=>a.map((t,j)=>({role:r,title:t,sort_order:i*100+j})))
+ };
+ for(const [t,r] of Object.entries(rows)){
+  await DB.from(t).delete().gte("id",0);
+  const e=(await DB.from(t).insert(r)).error;
+  if(e){alert(t+": "+e.message+"\nPastikan supabase_tambahan.sql sudah dijalankan.");return}
+ }
+ await DB.from("profile").upsert({id:1,name:D.nama,bio:D.tentang,whatsapp:D.wa});
+ alert("Selesai. Buka tab lain untuk melihat dan mengubah datanya.");cur="profile";show();
+}
+
+$("tabs").addEventListener("click",e=>{const b=e.target.closest("button");if(b){cur=b.dataset.k;edit=null;show()}});
+$("main").addEventListener("click",async e=>{
+ const b=e.target.closest("button");if(!b||!b.dataset.a)return;const id=Number(b.dataset.id),a=b.dataset.a;
+ if(a==="edit"){edit=id;show()}
+ else if(a==="cancel"){edit=null;show()}
+ else if(a==="del"){if(confirm("Hapus data ini?")){await DB.from(cur).delete().eq("id",id);show()}}
+ else if(a==="ok"||a==="no"){await DB.from("bookings").update({status:a==="ok"?"disetujui":"ditolak"}).eq("id",id);show()}
+ else if(a==="imp")imp();
+});
+$("main").addEventListener("submit",async e=>{
+ e.preventDefault();const t=T[cur],fd=e.target.elements,o={};
+ t.f.forEach(([k,,ty])=>{const el=fd[k];let v=ty==="b"?el.checked:el.value;
+  if(ty==="n")v=v===""?null:Number(v);else if(ty==="a")v=v.split(",").map(x=>x.trim()).filter(Boolean);else if(ty!=="b"&&v==="")v=null;o[k]=v});
+ let r;
+ if(t.single)r=await DB.from(cur).upsert({id:1,...o});
+ else if(edit!==null)r=await DB.from(cur).update(o).eq("id",edit);
+ else r=await DB.from(cur).insert(o);
+ if(r.error){alert(r.error.message);return}
+ edit=null;show();
+});
+document.addEventListener("change",async e=>{
+ const i=e.target;if(!i.dataset||!i.dataset.up)return;const f=i.files[0];if(!f)return;
+ const p=Date.now()+"-"+f.name.replace(/[^\w.\-]/g,"_");
+ const {error}=await DB.storage.from("media").upload(p,f);
+ if(error){alert(error.message);return}
+ i.form.elements[i.dataset.up].value=DB.storage.from("media").getPublicUrl(p).data.publicUrl;
+ alert("File terunggah. Klik Simpan agar tautannya tersimpan.");
+});
+async function start(){
+ try{const {data}=await DB.auth.getSession();const ok=!!data.session;
+ $("login").hidden=ok;$("app").hidden=!ok;if(ok)show()}
+ catch(e){$("login").hidden=false;$("err").textContent="Error: "+e.message}
+}
+$("lf").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const {error}=await DB.auth.signInWithPassword({email:$("em").value,password:$("pw").value});
+ if(error){$("err").textContent="Gagal masuk: "+error.message;return}start();
+});
+$("out").onclick=async()=>{await DB.auth.signOut();start()};
+start();
+</script>
+</body>
+</html>
